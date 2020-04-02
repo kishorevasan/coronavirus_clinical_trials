@@ -7,7 +7,7 @@ navbarPage("Coronavirus Clinical Trials",
                           includeCSS("style.css"),
                           includeScript("gomap.js")
                         ),
-
+                        
                         # If not using custom CSS, set height of leafletOutput to a number instead of percent
                         leafletOutput("map", width="100%", height="100%"),
                         
@@ -19,8 +19,8 @@ navbarPage("Coronavirus Clinical Trials",
                                       p("Total number of studies till date :",strong(num_records)),
                                       p("Number of studies since nCov outbreak (2019+)", strong(num_new_studies)),
                                       h4("Add Filters:"),
-                                      checkboxInput('outbreak','Show trials since outbreak (2019+)'),
-                                      checkboxInput('recruiting','Show recruiting trials')
+                                      checkboxInput('outbreak','Show trials since outbreak (2019+)',value=T),
+                                      checkboxInput('recruiting','Show recruiting trials',value=T)
                         )
                     )
            ),
@@ -39,17 +39,15 @@ navbarPage("Coronavirus Clinical Trials",
                                        ),
                                        mainPanel(
                                          p("The goal of this application is to provide up to date information on the ongoing clinical trials regarding the",em('Coronavirus.')),
-                                         p("The data was collected from", HTML('<a href=\"https:\\clinicaltrials.gov">ClinicalTrials.Gov</a>')," using their API. Please note that the integrity and accuracy of the data presented is not assured by the creators."),
-                                         
+                                         p("The data was collected from", HTML("<a href='https://clinicaltrials.gov/' target='_blank'>ClinicalTrials.Gov</a>")," using their API. Please note that the integrity and accuracy of the data presented is not assured by the creators."),
                                          h2("Latest Study:"),
                                          p(strong("NCT ID:"), HTML(latest_clinical_study$NCTId)),
                                          p(strong("Title:"), latest_clinical_study$BriefTitle),
                                          p(strong("Start Date:"), latest_clinical_study$StartDate),
                                          p(strong("Estimated Completion:"), latest_clinical_study$CompletionDate),
                                          p(strong("Description of the Study:"),latest_clinical_study$BriefSummary),
-                                         p(strong("Conditions Covered:"),latest_clinical_study$Condition),
                                          p(strong("Phase:"), latest_clinical_study$Phase),
-                                         p(strong("Keywords:"),latest_clinical_study$Keyword),
+                                         p(strong("Intervention:"),latest_clinical_study$InterventionMeshTerm),
                                          p(strong("Lead Sponsor:"), latest_clinical_study$LeadSponsorName),
                                          p(strong("Location:"),latest_clinical_study$LocationCity, latest_clinical_study$LocationCountry),
                                          br(),
@@ -71,25 +69,28 @@ navbarPage("Coronavirus Clinical Trials",
                                          div(style='max-height:500px; overflow-y: scroll; position: relative',plotlyOutput('countryplot',height = 500 + 15*nrow(country_data)))
                                        )
                                      )
-                  )
+           )
            ),
-           tabPanel("Condition Network",fluidPage(theme = shinytheme('flatly')),
+           tabPanel("Intervention Network",fluidPage(theme = shinytheme('flatly')),
                     tags$head(
                       tags$style(HTML(".shiny-output-error-validation{color: red;}"))),
                     pageWithSidebar(
-                      headerPanel('Co-Condition Network'),
+                      headerPanel('Co-Intervention Network'),
                       sidebarPanel(
                         width = 4,
-                        p("Total number of conditions being tested:",strong(nrow(nodes_data))),
-                        p("Here a node is a condition being tested in the clinical study and two conditions have an edge together if they are being tested together."),
-                        p("A solo node without connections implies that there are studies that test this conditions alone."),
-                        p("Node size represents the number of studies involving that condition."),
-                        p("Top condition of focus:",strong(top_condition_name), ", Num:",strong(top_condition_count)),
-                        checkboxInput('egonet','Show Ego Network'),
-                        selectInput('egonode','Select Condition',nodes_data$name)
+                        p("In a clinical trial, participants receive specific interventions according to the research plan or protocol created by the investigators. These interventions may be", strong("medical products, such as drugs or devices; procedures; or changes to participants' behavior, such as diet.")),
+                        p("Total number of items being tested:",strong(nrow(nodes_data))),
+                        p("Here a node is an intervention being tested in the clinical study and two interventions have an edge together if they are being treated together."),
+                        p("A solo node without connections implies that there are studies that test this intervention alone."),
+                        p("Node size represents the number of studies involving that intervention"),
+                        p("Top interventions:",strong(top_condition_name), ", Num Trials:",strong(top_condition_count)),
+                        checkboxInput('egonet','Filter Intervention'),
+                        selectInput('egonode','Select Intervention',nodes_data$name),
+                        p("Links to trials where the above intervention is happening:"),
+                        uiOutput('drug_studies')
                       ),
                       mainPanel(
-                        forceNetworkOutput("condition_network")
+                        forceNetworkOutput("intervention_network")
                       )
                     )
            ),
@@ -106,6 +107,6 @@ navbarPage("Coronavirus Clinical Trials",
                         dataTableOutput("coronavirusData")
                       )
                     )
-             )
+           )
 )
 

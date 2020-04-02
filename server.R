@@ -7,6 +7,25 @@ function(input, output, session) {
     return(tmp_data)
   })
   
+  interventionData <- reactive({
+    drug_name <- input$egonode
+    # get interventions data
+    logic_res <- rep(F, nrow(study_data))
+    for (row in 1:nrow(study_data)) {
+      interventions <- unlist(study_data[row,'InterventionMeshTerm'])
+      if(drug_name %in% interventions){
+        logic_res[row] <- T
+      }
+    }
+    tmp_studies<- paste(study_data[logic_res,'NCTId'],collapse = '; ')
+    return(tmp_studies)
+  })
+  
+  output$drug_studies <- renderText({
+    interventionData()
+  })
+  
+  
   output$coronavirusData <- renderDataTable(
     selectedData(), escape=FALSE,options = list(scrollX=TRUE,scrollY=TRUE)
   )
@@ -36,8 +55,9 @@ function(input, output, session) {
   
   output$map <- renderLeaflet(
     m <- leaflet() %>%
-      addProviderTiles(providers$OpenStreetMap)
-      
+      addProviderTiles(providers$OpenStreetMap)%>%
+      setView(lng = 33.85, lat = 20.45, zoom = 2)
+    
   )
   
   observe({
@@ -79,10 +99,8 @@ function(input, output, session) {
                          label = as.character(city_map_data$City),
                          popup = as.character(city_map_data$Text),
                          radius = city_map_data$Num,
-                         fillOpacity = 1)%>%
-        setView(lng = 33.85, lat = 20.45, zoom = 2)
+                         fillOpacity = 1)
     }
-    
   })
   
   # network data
@@ -116,7 +134,7 @@ function(input, output, session) {
   })
   
   # display the network
-  output$condition_network <- renderForceNetwork({
+  output$intervention_network <- renderForceNetwork({
     forceNetwork(Links = selectedData1()$edges, Nodes = selectedData1()$nodes,
                  Source = "from", Target = "to",
                  NodeID = "name",Group = "group",
@@ -126,7 +144,5 @@ function(input, output, session) {
                  linkWidth = JS("function(d) { return Math.sqrt(d.value);}")
     )
   })
-  
-  
 }
-  
+
