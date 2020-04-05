@@ -1,7 +1,7 @@
 # packages 
 library(httr)
 library(jsonlite)
-#library(XML)
+library(XML)
 library(DT)
 library(plyr)
 library(dplyr)
@@ -16,6 +16,9 @@ library(networkD3)
 library(igraph)
 library(lubridate)
 
+library(rentrez) # to get pubmed data
+
+
 
 
 # get coronavirus clinical trials
@@ -26,7 +29,7 @@ call <- paste0(base,endpoint)
 
 # attributes info
 
-fields <- c("NCTId",'Phase','StartDate','StartDateType','InterventionMeshTerm','CompletionDate',"BriefTitle","BriefSummary","Condition","LocationCity",'LocationState','LocationZip','LocationCountry','OverallStatus','LeadSponsorName','LeadSponsorClass')
+fields <- c("NCTId",'Phase','StartDate','StartDateType','InterventionMeshTerm','CompletionDate',"BriefTitle","BriefSummary","Condition","LocationCity",'LocationState','LocationZip','LocationCountry','OverallStatus','LeadSponsorName','LeadSponsorClass','ReferenceCitation','ReferencePMID','ReferenceType')
 num_attributes <- length(fields)
 
 # expression
@@ -241,6 +244,15 @@ both_filter_city_data$color <- "Purple"
 
 # create intervention network
 
+# num papers with interventions
+num_papers_with_intervention <- 0
+for(i in seq(1,nrow(study_data))){
+  if(length(study_data$InterventionMeshTerm[i][[1]]) > 0){
+    num_papers_with_intervention <- num_papers_with_intervention + 1
+  }
+}
+
+# given a vector of values, creates the from-to dataframe
 create_network<- function(x){
   v_1 <- c()
   v_2 <- c()
@@ -257,6 +269,7 @@ create_network<- function(x){
 }
 
 t <- lapply(study_data$InterventionMeshTerm, create_network)
+
 
 #print(t[[1]])
 #print(t[[20]])
@@ -306,22 +319,183 @@ colnames(edges_data) <- c("from",'to')
 #colnames(edges_data) <- c("from",'to','weight')
 print("completed setting edges")
 
-strength_nodes <- as.data.frame(strength(g))
-strength_nodes$name <- rownames(strength_nodes)
-colnames(strength_nodes) <- c("num_studies",'name')
-nodes_data <- left_join(nodes_data, strength_nodes,by = "name")
 
+# top interventions
+total_intervention <- unlist(study_data$InterventionMeshTerm)
+total_intervention <- plyr::count(total_intervention)
+top_intervention_name <- paste(total_intervention[order(-total_intervention$freq),][1:3,'x'],collapse = ', ')
+top_intervention_count <- paste(total_intervention[order(-total_intervention$freq),][1:3,'freq'],collapse=', ')
+
+colnames(total_intervention) <- c("name","num_studies")
+nodes_data <- left_join(nodes_data, total_intervention,by = "name")
 # scale node size
 nodes_data$num_studies <- nodes_data$num_studies*2
-
-# top study 
-top_condition_name <- paste(strength_nodes[order(-strength_nodes$num_studies),][1:3,'name'],collapse = ', ')
-top_condition_count <- paste(strength_nodes[order(-strength_nodes$num_studies),][1:3,'num_studies'],collapse=', ')
 
 # years info
 years <- unlist(lapply(study_data$StartDate, function(x) year(parse_date_time(x,orders=c('my','mdy')))))
 num_years_before_2019 <- length(years[years<2019])
 num_new_studies <- length(years) - num_years_before_2019
 num_year_unknown <- nrow(study_data) - length(years)
+
+####
+# Literature Meta-data
+####
+
+# get the papers of the clinical trials
+get_papers <- function(){
+  study_id <- c()
+  reference_citation <- c()
+  reference_pmid <- c()
+  reference_type <- c()
+  for(i in seq(1,nrow(study_data))){
+    num_papers <- length(study_data[i,"ReferenceCitation"][[1]])
+    # if it has papers
+    if(num_papers !=0){
+      for(tmp_idx in seq(1,num_papers)){
+        study_id <- c(study_id, study_data[i,"NCTId"])
+        reference_citation <- c(reference_citation,study_data[i,"ReferenceCitation"][[1]][tmp_idx])
+        reference_pmid <- c(reference_pmid,study_data[i,"ReferencePMID"][[1]][tmp_idx])
+        reference_type <- c(reference_type,study_data[i,"ReferenceType"][[1]][tmp_idx])
+      }
+    }
+  }
+  return(data.frame('NCTId'=study_id, 'ReferenceCitation' = reference_citation,'ReferencePMID'=reference_pmid,'ReferenceType'=reference_type))
+}
+
+clinical_trial_papers <- get_papers()
+
+# get the intervention name for every trial
+get_intervention_clinical_trials <- function(){
+  study_id <- c()
+  intervention_name <- c()
+  for(i in seq(1,nrow(study_data))){
+    interventions <- unique(study_data[i,"InterventionMeshTerm"][[1]])
+    # for each intervention
+    for(tmp_intervention in interventions){
+      study_id <- c(study_id, study_data[i,'NCTId'])
+      intervention_name <- c(intervention_name,tmp_intervention)
+    }
+  }
+  return(data.frame('NCTId'=study_id, 'InterventionMeshTerm' = intervention_name))
+}
+
+intervention_id <- get_intervention_clinical_trials()
+intervention_id <- intervention_id[intervention_id$NCTId %in% clinical_trial_papers$NCTId,]
+
+clinical_trial_papers <- left_join(clinical_trial_papers,intervention_id,by='NCTId')
+clinical_trial_papers$ReferenceCitation <- as.vector(clinical_trial_papers$ReferenceCitation)
+clinical_trial_papers$InterventionMeshTerm <- as.vector(clinical_trial_papers$InterventionMeshTerm)
+clinical_trial_papers$ReferencePMID <- as.vector(clinical_trial_papers$ReferencePMID)
+
+# used in UI
+total_clinical_trial_papers <- length(unique(clinical_trial_papers$ReferenceCitation))
+
+unique_interventions <- unique(clinical_trial_papers$InterventionMeshTerm)
+unique_interventions <- unique_interventions[!is.na(unique_interventions)]
+
+pubmed_url_base <- "<a href='https://www.ncbi.nlm.nih.gov/pubmed/"
+
+# from the perspective of papers: makes it easy to filter
+paper_citation <- clinical_trial_papers%>%group_by(ReferenceCitation)%>%
+  summarise(InterventionMeshTerm = paste(unique(InterventionMeshTerm[!is.na(InterventionMeshTerm)]),collapse=";"),
+            NCTId = paste(unique(NCTId[!is.na(NCTId)]),collapse="; "),
+            ReferencePMID = paste(pubmed_url_base,unique(ReferencePMID[!is.na(ReferencePMID)]),"' target='_blank'>",unique(ReferencePMID[!is.na(ReferencePMID)]),"</a>",collapse=''),
+            Outcome = paste(unique(ReferenceType),collapse=''))
+paper_citation <- as.data.frame(paper_citation)
+
+
+##### co-authorship through pubmed
+
+
+unique_ids <- clinical_trial_papers$ReferencePMID[!is.na(clinical_trial_papers$ReferencePMID)]
+unique_ids <- unique(unique_ids)
+
+# get the pubmed data for the pubmed id's
+tmp <- entrez_fetch(db='pubmed',id = unique_ids,rettype = 'xml',parsed = T)
+
+pubmed_data <- xmlToList(tmp)
+
+# store the meta data 
+pubmed_metadata <- data.frame(stringsAsFactors = F)
+
+# loop through authors
+for(i in seq(1,length(pubmed_data))){
+  authors <- pubmed_data[[i]]$MedlineCitation$Article$AuthorList
+  pmid <- pubmed_data[[i]]$MedlineCitation$PMID$text
+  tmp_authors <- c()
+  
+  # loop through authors
+  for(tmp_idx in seq(1,length(authors)-1)){
+    tmp_authors <- c(tmp_authors,paste(authors[[tmp_idx]]$ForeName,authors[[tmp_idx]]$LastName))
+  }
+  
+  # if we found authors
+  if(length(tmp_authors)>0){
+    pubmed_metadata <- rbind(pubmed_metadata, data.frame('ReferencePMID'=pmid,'authors'=tmp_authors,stringsAsFactors = F))
+  }
+}
+
+# get the list of top authors
+top_authors <- plyr::count(pubmed_metadata$authors)
+top_author_name <- paste(top_authors[order(-top_authors$freq),][1:3,'x'],collapse = ', ')
+top_author_count <- paste(top_authors[order(-top_authors$freq),][1:3,'freq'],collapse=', ')
+
+unique_authors <- unique(pubmed_metadata$authors)
+num_authors <- length(unique_authors)
+num_papers_with_authors <- length(unique(pubmed_metadata$ReferencePMID))
+
+# use it to filter based on intervention, else use pubmed_metadata
+pubmed_metadata_intervention <- left_join(pubmed_metadata,clinical_trial_papers,by='ReferencePMID')
+pubmed_metadata_intervention <- pubmed_metadata_intervention[,c("ReferencePMID",'authors','InterventionMeshTerm')]
+
+
+# given the list of papers, build the coauthorship graph
+build_coauthor_graph <- function(vector_of_papers,author_name=''){
+  coauthor_data <- data.frame()
+  for(paper in vector_of_papers){
+    unique_authors <- unique(pubmed_metadata[pubmed_metadata$ReferencePMID == paper,'authors'])
+    coauthor_data <- rbind(coauthor_data,create_network(unique_authors))
+  }
+  
+  #filter based on author
+  if(author_name != ''){
+    coauthor_data <- coauthor_data[(coauthor_data$from == author_name) | (coauthor_data$to == author_name),]
+    print(head(coauthor_data))
+  }
+  coauthor_g <- graph.data.frame(coauthor_data,directed=F)
+  
+  coauthor_edges_data <- get.data.frame(coauthor_g,what = 'edges')
+  coauthor_nodes_data <- get.data.frame(coauthor_g,what = 'vertices')
+  
+  # community 
+  c1 = cluster_infomap(coauthor_g)
+  print("got cluster")
+  mem_nodes <- membership(c1)
+  coauthor_nodes_data$group <- as.vector(mem_nodes)
+  coauthor_nodes_data$id <- seq(0,nrow(coauthor_nodes_data)-1)
+  
+  print("Nodes data columns:")
+  print(colnames(nodes_data)) # name, group, id
+  print("Edges data columns:")
+  print(colnames(edges_data)) # from, to
+  coauthor_edges_data <- left_join(coauthor_edges_data,coauthor_nodes_data,by = c('from'='name'))
+  coauthor_edges_data <- left_join(coauthor_edges_data,coauthor_nodes_data,by = c('to'='name'))
+  print(head(coauthor_edges_data,1))
+  coauthor_edges_data <- coauthor_edges_data[,c('id.x','id.y')]
+  colnames(coauthor_edges_data) <- c("from",'to')
+  
+  #edges_data <- edges_data[,c('id.x','id.y','weight')]
+  #colnames(edges_data) <- c("from",'to','weight')
+  print("completed setting edges")
+  
+  coauthor_degree_nodes <- as.data.frame(degree(coauthor_g))
+  coauthor_degree_nodes$name <- rownames(coauthor_degree_nodes)
+  colnames(coauthor_degree_nodes) <- c("degree",'name')
+  
+  #join to the nodes data
+  coauthor_nodes_data <- left_join(coauthor_nodes_data, coauthor_degree_nodes,by = "name")
+  
+  return(list('nodes'=coauthor_nodes_data,'edges'=coauthor_edges_data))
+}
 
 print("Completed Script")

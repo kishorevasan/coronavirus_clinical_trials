@@ -3,8 +3,8 @@ function(input, output, session) {
   
   selectedData <- reactive({
     study_status <- input$status
-    tmp_data <- study_data[study_data$OverallStatus == study_status,]
-    return(tmp_data)
+    filtered_study_data <- study_data[study_data$OverallStatus == study_status,]
+    return(filtered_study_data)
   })
   
   interventionData <- reactive({
@@ -25,6 +25,68 @@ function(input, output, session) {
     interventionData()
   })
   
+  result_papers <- reactive({
+    if(input$filterpaper){
+      subset_papers <- clinical_trial_papers[clinical_trial_papers$InterventionMeshTerm==input$paperintervention,'ReferenceCitation']
+      tmp_papers <- paper_citation[paper_citation$ReferenceCitation %in% subset_papers,]
+    }else{
+      tmp_papers <- paper_citation
+    }
+    results_papers <- tmp_papers[tmp_papers$Outcome=='result',]
+    num_results <- nrow(results_papers)
+    results_base_text <- paste0("<b>Results Papers</b><t> Num: ",num_results,"<br/>")
+    
+    # curate papers
+    results_papers_text <- paste(paste0("<em>Paper: </em>",results_papers$ReferenceCitation,'<br/>'),paste0("PubMed ID:",results_papers$ReferencePMID,'<br/>'), paste0("Trials:",results_papers$NCTId,'<br/>'),paste0("Interventions:",results_papers$InterventionMeshTerm,'<br/>'),collapse="<br/>")
+    complete_results_text <- paste(results_base_text,results_papers_text)
+    return(complete_results_text)    
+  })
+  
+  derived_papers <- reactive({
+    if(input$filterpaper){
+      subset_papers <- clinical_trial_papers[clinical_trial_papers$InterventionMeshTerm==input$paperintervention,'ReferenceCitation']
+      tmp_papers <- paper_citation[paper_citation$ReferenceCitation %in% subset_papers,]
+    }else{
+      tmp_papers <- paper_citation
+    }
+    derived_papers <- tmp_papers[tmp_papers$Outcome == 'derived',]
+    num_derived <- nrow(derived_papers)    
+    derived_base_text <- paste0("<b>Derived Papers</b><t> Num: ",num_derived,"<br/>")
+    
+    # curate papers
+    derived_papers_text <- paste(paste0("<em>Paper: </em>",derived_papers$ReferenceCitation,'<br/>'),paste0("PubMed ID: ",derived_papers$ReferencePMID,'<br/>'), paste0("Trials: ",derived_papers$NCTId,'<br/>'),paste0("Interventions: ",derived_papers$InterventionMeshTerm,'<br/>'),collapse="<br/>")
+    complete_derived_text <- paste(derived_base_text,derived_papers_text)
+    return(complete_derived_text)
+  })  
+  
+  background_papers <- reactive({
+    if(input$filterpaper){
+      subset_papers <- clinical_trial_papers[clinical_trial_papers$InterventionMeshTerm==input$paperintervention,'ReferenceCitation']
+      tmp_papers <- paper_citation[paper_citation$ReferenceCitation %in% subset_papers,]
+    }else{
+      tmp_papers <- paper_citation
+    }
+    background_papers <- tmp_papers[tmp_papers$Outcome == 'background',]
+    num_background <- nrow(background_papers)
+    background_base_text <- paste0("<b>Background Papers</b><t> Num:",num_background,"<br/>")
+    
+    # curate papers
+    background_papers_text <- paste(paste0("<em>Paper: </em>",background_papers$ReferenceCitation,'<br/>'),paste0("PubMed ID: ",background_papers$ReferencePMID,'<br/>'), paste0("Trials: ",background_papers$NCTId,'<br/>'),paste0("Interventions: ",background_papers$InterventionMeshTerm,'<br/>'),collapse="<br/>")
+    complete_background_text <- paste(background_base_text,background_papers_text)
+    return(complete_background_text)
+  })
+  
+  output$resultPapers <- renderUI({
+    HTML(result_papers())
+  })
+  
+  output$derivedPapers <- renderUI({
+    HTML(derived_papers())
+  })
+  
+  output$backgroundPapers <- renderUI({
+    HTML(background_papers())
+  })
   
   output$coronavirusData <- renderDataTable(
     selectedData(), escape=FALSE,options = list(scrollX=TRUE,scrollY=TRUE)
@@ -104,7 +166,7 @@ function(input, output, session) {
   })
   
   # network data
-  selectedData1 <- reactive({
+  interventionNetworkData <- reactive({
     # if need to viz ego net
     if(input$egonet){
       ego_id <- nodes_data[nodes_data$name==input$egonode,'id']
@@ -133,12 +195,45 @@ function(input, output, session) {
     }
   })
   
-  # display the network
+  # display the intervention network
   output$intervention_network <- renderForceNetwork({
-    forceNetwork(Links = selectedData1()$edges, Nodes = selectedData1()$nodes,
+    forceNetwork(Links = interventionNetworkData()$edges, Nodes = interventionNetworkData()$nodes,
                  Source = "from", Target = "to",
                  NodeID = "name",Group = "group",
                  Nodesize = 'num_studies',fontSize = 20,
+                 opacity = 1,zoom = T,bounded=T,
+                 linkDistance = 50,
+                 linkWidth = JS("function(d) { return Math.sqrt(d.value);}")
+    )
+  })
+  
+  coauthorshipNetworkData <- reactive({
+    filter_intervention <- input$paperintervention
+    filter_author <- input$paperauthor
+    
+    if(input$networkfilter == 'author'){
+      subset_papers <- pubmed_metadata[pubmed_metadata$authors == filter_author,'ReferencePMID']
+      net <- build_coauthor_graph(subset_papers,filter_author)
+    }else{
+      subset_papers <- pubmed_metadata_intervention[pubmed_metadata_intervention$InterventionMeshTerm == filter_intervention,'ReferencePMID']
+      # quality check
+      subset_papers <- unique(subset_papers)
+      subset_papers <- subset_papers[!is.na(subset_papers)]
+      
+      net <- build_coauthor_graph(subset_papers)
+    }
+    
+    
+    # get the list of nodes and edges
+    return(net)
+  })
+  
+  # display the network
+  output$coauthor_network <- renderForceNetwork({
+    forceNetwork(Links = coauthorshipNetworkData()$edges, Nodes = coauthorshipNetworkData()$nodes,
+                 Source = "from", Target = "to",
+                 NodeID = "name",Group = "group",
+                 Nodesize = 'degree',fontSize = 20,
                  opacity = 1,zoom = T,bounded=T,
                  linkDistance = 50,
                  linkWidth = JS("function(d) { return Math.sqrt(d.value);}")

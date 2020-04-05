@@ -82,8 +82,9 @@ navbarPage("Coronavirus Clinical Trials",
                         p("Total number of items being tested:",strong(nrow(nodes_data))),
                         p("Here a node is an intervention being tested in the clinical study and two interventions have an edge together if they are being treated together."),
                         p("A solo node without connections implies that there are studies that test this intervention alone."),
-                        p("Node size represents the number of studies involving that intervention"),
-                        p("Top interventions:",strong(top_condition_name), ", Num Trials:",strong(top_condition_count)),
+                        p("Node size represents the number of studies that focus on that intervention."),
+                        p(strong("Total number of trials with intervention data:"),num_papers_with_intervention),
+                        p("Top interventions:",strong(top_intervention_name), ", Num Trials:",strong(top_intervention_count)),
                         checkboxInput('egonet','Filter Intervention'),
                         selectInput('egonode','Select Intervention',nodes_data$name),
                         p("Links to trials where the above intervention is happening:"),
@@ -91,6 +92,41 @@ navbarPage("Coronavirus Clinical Trials",
                       ),
                       mainPanel(
                         forceNetworkOutput("intervention_network")
+                      )
+                    )
+           ),
+           tabPanel("Scientific Literature",fluidPage(theme = shinytheme('flatly')),
+                    tags$head(
+                      tags$style(HTML(".shiny-output-error-validation{color: red;}"))),
+                    pageWithSidebar(
+                      headerPanel('Clinical Trial Papers'),
+                      sidebarPanel(
+                        width = 4,
+                        p('This page displays the papers published regarding clinical trials of COVID 19.'),
+                        p("Every clinical trial eventually leads to a publication. In this dataset, the publication could either be:"),
+                        p(strong("Results:"), "These are papers provided by the investigators i.e. published results of the clinical trial."),
+                        p(strong("Derived:"), "These are curated by clinicaltrials.gov i.e. papers in PubMed that attach the clinical trial id in the text."),
+                        p(strong("Background:"),"These are reference papers that are provided by the investigators to give background regarding the clincial trial."),
+                        p(strong("Total number of Clinical Trial Papers:"),total_clinical_trial_papers),
+                        p(strong("Total number of Papers with author meta-data:"),num_papers_with_authors),
+                        checkboxInput('filterpaper','Filter papers based on intervention.'),
+                        selectInput('paperintervention','Select Intervention',unique_interventions,selected = 'Interferons'),
+                        h4("Co-Authorship Network"),
+                        p(strong("Total number of Authors:"), num_authors),
+                        p("Top Authors:",strong(top_author_name), ", Num Papers:",strong(top_author_count)),
+                        p('The co-authorship network is displayed based on the intervention selected above. If you see an error, it means that there are no author information available for that intervention yet.'),
+                        radioButtons('networkfilter', 'Filter network based on:', choices = list('Intervention'='intervention','Author'='author')),
+                        selectInput('paperauthor','Select Author',unique_authors)
+                      ),
+                      mainPanel(
+                        h4("Here are the list of papers:"),
+                        tabsetPanel(type = "tabs",
+                                    tabPanel("Results", uiOutput("resultPapers"),style = "overflow-y:scroll; height: 400px"),
+                                    tabPanel("Derived", uiOutput("derivedPapers"),style = "overflow-y:scroll; height: 400px"),
+                                    tabPanel("Background", uiOutput("backgroundPapers"),style = "overflow-y:scroll; height: 400px")
+                        ),
+                        h4("Co-Authorship Network:"),
+                        forceNetworkOutput("coauthor_network")
                       )
                     )
            ),
